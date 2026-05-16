@@ -1,0 +1,29 @@
+[project]
+name = "duoyuan-extractor"
+version = "0.1.0"
+description = "多源项目信息提取器 - 基于LangGraph的ReAct Agent，自动读取项目文档，OCR识别后由LLM提取结构化信息"
+authors = [
+    {name = "user"}
+]
+requires-python = "^3.10"
+dependencies = [
+    "langgraph (>=1.2.0,<2.0.0)",
+    "langchain-community (>=0.4.1,<0.5.0)",
+    "langchain-openai (>=1.2.1,<2.0.0)",
+    "paddleocr (>=3.5.0,<4.0.0)",
+    "paddlepaddle (>=3.3.1,<4.0.0)",
+    "pymupdf (>=1.27.2.3,<2.0.0.0)",
+    "fastapi (>=0.136.1,<0.137.0)",
+    "uvicorn (>=0.47.0,<0.48.0)",
+    "pydantic (>=2.13.4,<3.0.0)",
+    "pyyaml (>=6.0.3,<7.0.0)",
+    "openpyxl (>=3.1.5,<4.0.0)",
+    "python-dotenv (>=1.2.2,<2.0.0)",
+    "httpx (>=0.28.1,<0.29.0)",
+    "dashscope (>=1.25.18,<2.0.0)"
+]
+
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"

@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+
+# 虚拟环境
+.venv/
+venv/
+
+# 环境变量
+.env
+
+# 输出结果
+output/*.json
+output/*.xlsx
+
+# OCR 缓存
+cache/ocr/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Git
+*.orig
