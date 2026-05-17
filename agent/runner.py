@@ -21,6 +21,8 @@ from langgraph.prebuilt import create_react_agent
 
 from core.llm_utils import get_llm_config
 from core.template_loader import load_templates, get_all_field_names
+from core.verify import verify_extraction
+from core.ocr_cache import get_cache
 from agent.tools import list_project_files, read_document
 from agent.prompts import build_system_prompt, build_project_prompt
 
@@ -142,14 +144,32 @@ def process_project(
             )
             result_json = _try_parse_json(full_text)
 
-        # 记录处理过的文件（从消息中提取）
+        # 记录处理过的文件
         processed = _extract_processed_files(messages)
+
+        # 拿到结果体（Agent 可能输出 {"提取结果": {...}, "已读文件": [...]} 或直接 {...}）
+        raw_result = result_json if result_json else {"_raw": result_text}
+        extracted_fields = raw_result.get("提取结果", raw_result)
+
+        # ===== 事后验证：拿提取值去 OCR 原文里核对 =====
+        cache = get_cache()
+        ocr_map = {}
+        for fpath in processed:
+            text = cache.get(fpath)
+            if text:
+                ocr_map[fpath] = text
+
+        # 如果缓存没有（可能是 HTTP OCR 模式），从 agent 消息中提取工具返回的原文
+        if not ocr_map:
+            ocr_map = _extract_tool_results(messages)
+
+        verified_result = verify_extraction(extracted_fields, ocr_map)
 
         return {
             "folder": folder_name,
             "type": project_type,
             "status": "complete",
-            "result": result_json if result_json else {"_raw": result_text},
+            "result": verified_result,
             "tool_calls": tool_calls,
             "files_processed": processed,
         }
@@ -267,7 +287,38 @@ def _extract_processed_files(messages: list) -> list[str]:
                     fpath = args.get("file_path", "")
                     if fpath:
                         files.append(fpath)
-        # 也检查 tool 调用的响应
-        if hasattr(m, 'name') and m.name == "read_document":
-            pass  # 工具响应消息
     return list(set(files))
+
+
+def _extract_tool_results(messages: list) -> dict[str, str]:
+    """
+    从消息历史中提取工具调用的返回内容 {文件路径: 文字}
+    当缓存不可用时作为后备
+    """
+    results = {}
+    # 找 ToolMessage，它们包含工具返回的内容
+    for m in messages:
+        if hasattr(m, 'name') and m.name == "read_document":
+            content = m.content if hasattr(m, 'content') else ""
+            # 尝试从 ToolMessage 中推断文件路径
+            # （LangGraph 的 ToolMessage 不直接暴露参数，用内容推测）
+            pass
+
+    # 更可靠的方式：从 AI 消息的 tool_calls 中找参数，
+    # 从后续的 Tool 消息中找结果（它们按调用顺序配对）
+    tool_messages = [m for m in messages if hasattr(m, 'name') and m.name == "read_document"]
+    tool_call_msgs = []
+    for m in messages:
+        if hasattr(m, 'tool_calls') and m.tool_calls:
+            for tc in m.tool_calls:
+                if tc.get("name") == "read_document":
+                    tool_call_msgs.append(tc)
+
+    # 配对
+    for i, tc in enumerate(tool_call_msgs):
+        fpath = tc.get("args", {}).get("file_path", "")
+        content = tool_messages[i].content if i < len(tool_messages) else ""
+        if fpath and content:
+            results[fpath] = content
+
+    return results
