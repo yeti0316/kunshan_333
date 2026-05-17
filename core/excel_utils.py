@@ -211,8 +211,8 @@ def append_results_to_excel(
 
         matched += 1
         extracted = result.get("提取结果", {})
-        confidence = result.get("置信度评估", {})
-        verify = result.get("验证", {})
+        confidence = result.get("置信度评估", {}) or {}
+        verify = result.get("验证", {}) or {}
 
         # 判断是否一致：提取的整治类型 vs Excel 中的项目小类
         extracted_type = extracted.get("整治类型", "")

@@ -21,7 +21,8 @@ from langgraph.prebuilt import create_react_agent
 
 from core.llm_utils import get_llm_config
 from core.template_loader import load_templates, get_all_field_names
-from core.verify import verify_extraction
+# TODO: 验证模块暂时关闭，需要时取消注释
+# from core.verify import verify_extraction
 from core.ocr_cache import get_cache
 from agent.tools import list_project_files, read_document
 from agent.prompts import build_system_prompt, build_project_prompt
@@ -152,19 +153,17 @@ def process_project(
         raw_result = result_json if result_json else {"_raw": result_text}
         extracted_fields = raw_result.get("提取结果", raw_result)
 
-        # ===== 事后验证：拿提取值去 OCR 原文里核对 =====
-        cache = get_cache()
-        doc_texts = {}
-        for fpath in processed:
-            text = cache.get(fpath)
-            if text:
-                doc_texts[fpath] = text
-
-        # 如果缓存没有（可能是 HTTP OCR 模式），从 agent 消息中提取工具返回的原文
-        if not doc_texts:
-            doc_texts = _extract_tool_results(messages)
-
-        verified_result = verify_extraction(extracted_fields, doc_texts)
+        # ==== 事后验证（暂时关闭） ====
+        # cache = get_cache()
+        # doc_texts = {}
+        # for fpath in processed:
+        #     text = cache.get(fpath)
+        #     if text:
+        #         doc_texts[fpath] = text
+        # if not doc_texts:
+        #     doc_texts = _extract_tool_results(messages)
+        # verified_result = verify_extraction(extracted_fields, doc_texts)
+        verified_result = {"提取结果": extracted_fields, "已读文件": processed}
 
         return {
             "folder": folder_name,

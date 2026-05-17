@@ -63,7 +63,7 @@ class Checkpoint:
     def set(self, project_path: str, result: dict[str, Any]):
         """记录项目结果"""
         path = str(Path(project_path).resolve())
-        confidence = result.get("result", {}).get("置信度评估", {}).get("等级", "?")
+        confidence = result.get("result", {}).get("置信度评估", {}).get("等级", "?") or "?"
         self.data[path] = {
             "status": result.get("status", "error"),
             "confidence": confidence,
