@@ -5,6 +5,7 @@ OCR HTTP 常驻服务
 模型只在启动时加载一次，后续请求直接使用。
 
 启动:
+ conda activate rag
   python ocr_server.py --port 5000
 
 然后在 .env 中设置:
@@ -33,17 +34,34 @@ from core.ocr_cache import get_cache
 try:
     from fastapi import FastAPI, HTTPException, UploadFile, File, Form
     from fastapi.responses import HTMLResponse
-    from fastapi.staticfiles import StaticFiles
     from pydantic import BaseModel
     import uvicorn
 except ImportError:
     print("需要安装 FastAPI 和 Uvicorn：pip install fastapi uvicorn")
     sys.exit(1)
 
-app = FastAPI(title="OCR 服务", version="1.0.0")
+from contextlib import asynccontextmanager
 
 # 全局 OCR 实例（启动时初始化）
 _ocr_instance = None
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    """应用生命周期：启动时加载模型"""
+    global _ocr_instance
+    print("⏳ 正在加载 PaddleOCR 模型（首次加载约 5-15 秒）...")
+    try:
+        from core.extractor import get_ocr
+        _ocr_instance = get_ocr()
+        print("✅ PaddleOCR 模型加载完成")
+    except Exception as e:
+        print(f"❌ 模型加载失败: {e}")
+        _ocr_instance = None
+    yield
+
+
+app = FastAPI(title="OCR 服务", version="1.0.0", lifespan=lifespan)
 
 
 class OCRRequest(BaseModel):
@@ -56,20 +74,6 @@ class OCRResponse(BaseModel):
     method: str  # "direct" | "ocr"
     pages: int
     cached: bool = False
-
-
-@app.on_event("startup")
-async def startup():
-    """启动时加载 PaddleOCR（只加载一次）"""
-    global _ocr_instance
-    print("⏳ 正在加载 PaddleOCR 模型（首次加载约 5-15 秒）...")
-    try:
-        from core.extractor import _get_ocr
-        _ocr_instance = _get_ocr()
-        print("✅ PaddleOCR 模型加载完成")
-    except Exception as e:
-        print(f"❌ 模型加载失败: {e}")
-        _ocr_instance = None
 
 
 @app.get("/health")
