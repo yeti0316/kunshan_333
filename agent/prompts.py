@@ -16,7 +16,7 @@ def build_system_prompt(project_type: str, template: dict) -> str:
 
 【可用工具】
 - list_files(path): 列出文件夹下所有文件
-- read_document(path, pages=2): 读取文档文字（PDF/Word/图片均可）
+- read_document(path, pages=1): 读取文档第1页文字（PDF/Word/图片均可）
 
 【当前任务】
 项目类型：{project_type}

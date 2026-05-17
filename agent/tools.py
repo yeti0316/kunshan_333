@@ -41,7 +41,7 @@ def list_project_files(project_path: str) -> str:
 
 
 @tool
-def read_document(file_path: str, max_pages: int = 2) -> str:
+def read_document(file_path: str, max_pages: int = 1) -> str:
     """读取文档内容并返回文字。
     
     支持 PDF / Word (.docx) / 图片 (.png .jpg .bmp)
@@ -55,7 +55,7 @@ def read_document(file_path: str, max_pages: int = 2) -> str:
     
     Args:
         file_path: 文件完整路径
-        max_pages: 最多读取前几页（默认 2 页），关键信息通常在前 1-2 页
+        max_pages: 最多读取前几页（默认 1 页），关键信息通常在第 1 页
     """
     if not os.path.exists(file_path):
         return f"[错误] 文件不存在: {file_path}"

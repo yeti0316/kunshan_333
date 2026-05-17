@@ -31,6 +31,7 @@ from agent.runner import process_project, batch_process_parallel
 from core.template_loader import load_templates
 from core.excel_reader import read_project_list, read_directory_as_project_list
 from core.excel_utils import results_to_excel
+from core.checkpoint import Checkpoint
 
 
 def main():
@@ -93,6 +94,32 @@ def main():
     if args.workers > 1:
         print(f"   ⚡ 并发 {args.workers} 线程")
 
+    # ---- 断点续跑 ----
+    checkpoint = Checkpoint()
+    ckpt_stats = checkpoint.stats()
+    if ckpt_stats["total_processed"] > 0:
+        print(f"\n📌 断点续跑：已处理 {ckpt_stats['complete']} 个")
+        print(f"   高置信度可跳过: {ckpt_stats['will_skip']} 个")
+        print(f"   还需重新处理: {ckpt_stats['total_processed'] - ckpt_stats['will_skip']} 个")
+
+    # 过滤：跳过已成功 + 高置信度的
+    to_process = []
+    skipped = 0
+    for p in projects:
+        if checkpoint.should_skip(p["path"]):
+            skipped += 1
+        else:
+            to_process.append(p)
+
+    if skipped:
+        print(f"   ⏭ 跳过 {skipped} 个已完成项目")
+    print(f"   本次处理: {len(to_process)} 个项目\n")
+
+    projects = to_process
+    if not projects:
+        print("✅ 所有项目已完成，无需处理。")
+        return
+
     # ---- 处理项目 ----
     overall_start = time.time()
 
@@ -116,6 +143,8 @@ def main():
                 if r.get("error"):
                     clean["_error"] = r["error"]
             results.append(clean)
+            # 保存 checkpoint
+            checkpoint.set(r.get("path", ""), r)
 
     else:
         # === 串行模式 ===
@@ -161,6 +190,9 @@ def main():
                 if result.get("error"):
                     clean["_error"] = result["error"]
             results.append(clean)
+
+            # 保存 checkpoint
+            checkpoint.set(proj_path, result)
 
     total_elapsed = time.time() - overall_start
     completed = sum(1 for r in results if r.get("_status") == "complete")

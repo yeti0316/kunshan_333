@@ -153,17 +153,17 @@ def process_project(
 
         # ===== 事后验证：拿提取值去 OCR 原文里核对 =====
         cache = get_cache()
-        ocr_map = {}
+        doc_texts = {}
         for fpath in processed:
             text = cache.get(fpath)
             if text:
-                ocr_map[fpath] = text
+                doc_texts[fpath] = text
 
         # 如果缓存没有（可能是 HTTP OCR 模式），从 agent 消息中提取工具返回的原文
-        if not ocr_map:
-            ocr_map = _extract_tool_results(messages)
+        if not doc_texts:
+            doc_texts = _extract_tool_results(messages)
 
-        verified_result = verify_extraction(extracted_fields, ocr_map)
+        verified_result = verify_extraction(extracted_fields, doc_texts)
 
         return {
             "folder": folder_name,
