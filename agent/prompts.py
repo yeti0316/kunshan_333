@@ -66,9 +66,22 @@ def _build_hints(project_type: str, template: dict) -> str:
     hints = []
 
     hints.append("经验提示（参考，最终以文档原文为准）：")
-    hints.append("- 合同 → 通常有项目名称、金额、工期")
-    hints.append("- 中标通知书 → 通常有项目名称和日期")
-    hints.append("- 检测/施工报告 → 通常有管道长度和道路名称")
+
+    # 工业企业整治特殊规则
+    if "工业" in project_type:
+        hints.append("- 这是「工业企业整治」类项目，文档通常是排水许可证或验收报告")
+        hints.append("- 企业名称：文档中明确标注的企业名称")
+        hints.append("- 企业地址：文档中的注册地址或经营地址")
+        hints.append("- 年份：排水许可证取发证年份（如'2023-2024'取2023），否则整治完成年份")
+        hints.append("- 整治类型判断（关键！）：")
+        hints.append("  * 文档只提「生活污水」→ 雨污分流整治")
+        hints.append("  * 文档提「生活+工业」→ 工业废水接纳整治")
+        hints.append("  * 文档只提「工业废水」→ 废水接纳整治")
+        hints.append("  * 注意：公司名称里有「工业」不代表整治类型是工业废水！看实际内容！")
+    else:
+        hints.append("- 合同 → 通常有项目名称、金额、工期")
+        hints.append("- 中标通知书 → 通常有项目名称和日期")
+        hints.append("- 检测/施工报告 → 通常有管道长度和道路名称")
 
     if common_files:
         hints.append(f"- 该项目类型常见文件：{'、'.join(common_files)}，可优先查看")
@@ -80,7 +93,7 @@ def _build_hints(project_type: str, template: dict) -> str:
 
 def build_project_prompt(project_path: str, project_type: str) -> str:
     return (
-        f"项目文件夹：{project_path}\n"
+        f"项目路径：{project_path}\n"
         f"项目类型：{project_type}\n\n"
         f"请读取文件并提取字段。找不到明确证据的字段留空。"
     )

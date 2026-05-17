@@ -81,14 +81,15 @@ def process_project(
         { folder, type, status, result, error, files_processed }
     """
     path = Path(project_path)
-    folder_name = path.name
+    folder_name = path.name if path.is_dir() else path.parent.name
 
     if not path.exists():
         return {"folder": folder_name, "type": project_type,
                 "status": "error", "error": "路径不存在", "result": {}}
-    if not path.is_dir():
+    # 兼容：可能是文件夹，也可能是单文件
+    if not path.is_dir() and not path.is_file():
         return {"folder": folder_name, "type": project_type,
-                "status": "error", "error": "不是文件夹", "result": {}}
+                "status": "error", "error": "既不是文件夹也不是文件", "result": {}}
 
     # 加载模板
     if template is None:
@@ -167,6 +168,7 @@ def process_project(
 
         return {
             "folder": folder_name,
+            "path": str(path),
             "type": project_type,
             "status": "complete",
             "result": verified_result,
@@ -177,6 +179,7 @@ def process_project(
     except Exception as e:
         return {
             "folder": folder_name,
+            "path": str(path),
             "type": project_type,
             "status": "error",
             "error": str(e),

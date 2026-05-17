@@ -102,6 +102,194 @@ def results_to_excel(
     return output_path
 
 
+def append_results_to_excel(
+    input_excel: str,
+    results: list[dict],
+    output_path: str,
+) -> str:
+    """
+    在原 Excel 后面追加提取结果列
+
+    对于每个项目：
+    - 匹配 original 的「完整路径」列（或「项目路径」列）
+    - 在右侧新增列：提取字段 + 置信度 + 是否一致
+
+    Args:
+        input_excel: 原始 Excel 文件
+        results: 提取结果列表
+        output_path: 输出 Excel 文件路径
+
+    Returns:
+        输出路径
+    """
+    from openpyxl import load_workbook
+    from openpyxl.styles import Font, PatternFill, Alignment
+
+    # 构建结果索引 {完整路径: 结果}
+    result_index: dict[str, dict] = {}
+    for r in results:
+        path_key = r.get("_path", "").replace("\\", "/").lower().strip()
+        result_index[path_key] = r
+
+    # 加载原始 Excel
+    input_path = Path(input_excel)
+    wb = load_workbook(input_path)
+    ws = wb.active
+
+    if ws is None:
+        raise ValueError("Excel 中没有工作表")
+
+    # 读表头，找到「完整路径」列
+    headers = []
+    path_col = None
+    for col_idx, cell in enumerate(ws[1], 1):
+        val = str(cell.value).strip() if cell.value else ""
+        headers.append(val)
+        if val in ("完整路径", "项目路径", "文件夹路径"):
+            path_col = col_idx
+
+    if path_col is None:
+        # 尝试找第一列包含"路径"的
+        for i, h in enumerate(headers, 1):
+            if "路径" in h:
+                path_col = i
+                break
+
+    if path_col is None:
+        raise ValueError(f"原始 Excel 中找不到路径列。表头: {headers}")
+
+    # 找最后一列
+    max_col = ws.max_column
+
+    # 收集原始 Excel 中所有存在的类型（项目小类列）
+    type_col = None
+    for i, h in enumerate(headers, 1):
+        if h in ("项目小类", "项目类型"):
+            type_col = i
+            break
+
+    # 新增列的表头
+    new_headers = [
+        "企业名称_提取",
+        "企业地址_提取",
+        "年份_提取",
+        "整治类型_提取",
+        "排水许可证编号_提取",
+        "置信度",
+        "与人工分类是否一致",
+        "需人工复核",
+        "验证通过字段",
+    ]
+
+    # 样式
+    header_font = Font(name="微软雅黑", bold=True, size=10, color="FFFFFF")
+    header_fill = PatternFill(start_color="4472C4", end_color="4472C4", fill_type="solid")
+    warn_fill = PatternFill(start_color="FFF2CC", end_color="FFF2CC", fill_type="solid")  # 浅黄
+    err_fill = PatternFill(start_color="FCE4EC", end_color="FCE4EC", fill_type="solid")  # 浅红
+
+    # 写新表头
+    for offset, h in enumerate(new_headers):
+        col = max_col + 1 + offset
+        cell = ws.cell(row=1, column=col, value=h)
+        cell.font = header_font
+        cell.fill = header_fill
+        cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+
+    # 逐行匹配并写入
+    matched = 0
+    unmatched = 0
+    for row_idx in range(2, ws.max_row + 1):
+        path_cell = ws.cell(row=row_idx, column=path_col)
+        if not path_cell.value:
+            continue
+        path_val = str(path_cell.value).replace("\\", "/").lower().strip()
+
+        result = result_index.get(path_val)
+        if result is None:
+            unmatched += 1
+            continue
+
+        matched += 1
+        extracted = result.get("提取结果", {})
+        confidence = result.get("置信度评估", {})
+        verify = result.get("验证", {})
+
+        # 判断是否一致：提取的整治类型 vs Excel 中的项目小类
+        extracted_type = extracted.get("整治类型", "")
+        excel_type = ""
+        if type_col:
+            excel_type = str(ws.cell(row=row_idx, column=type_col).value or "").strip()
+
+        match = _type_match(extracted_type, excel_type)
+        need_review = confidence.get("需人工复核", False) or (not match)
+        verified_count = confidence.get("已验证字段数", 0)
+        total_verified = verified_count + confidence.get("未找到原文字段数", 0)
+
+        values = [
+            extracted.get("企业名称", ""),
+            extracted.get("企业地址", ""),
+            extracted.get("年份", ""),
+            extracted_type,
+            extracted.get("排水许可证编号", ""),
+            confidence.get("等级", ""),
+            "一致" if match else ("不一致" if extracted_type else "未识别"),
+            "是" if need_review else "否",
+            f"{verified_count}/{total_verified}" if total_verified else "-",
+        ]
+
+        for offset, val in enumerate(values):
+            col = max_col + 1 + offset
+            cell = ws.cell(row=row_idx, column=col, value=val)
+            cell.alignment = Alignment(vertical="center", wrap_text=True)
+            # 不一致的行标黄
+            if not match and offset == 6:
+                cell.fill = warn_fill
+            # 需复核的行标浅红
+            if need_review and offset == 7:
+                cell.fill = err_fill if need_review else None
+
+    # 调整列宽
+    for offset in range(len(new_headers)):
+        col = max_col + 1 + offset
+        max_len = len(new_headers[offset]) * 2
+        for row_idx in range(2, ws.max_row + 1):
+            val = ws.cell(row=row_idx, column=col).value
+            if val:
+                char_len = sum(2 if ord(c) > 127 else 1 for c in str(val))
+                max_len = max(max_len, min(char_len, 40))
+        col_letter = _col_letter(col)
+        ws.column_dimensions[col_letter].width = max_len + 2
+
+    output_path = Path(output_path)
+    wb.save(output_path)
+    print(f"   匹配 {matched} 行，未匹配 {unmatched} 行")
+    return str(output_path)
+
+
+def _type_match(extracted: str, excel: str) -> bool:
+    """判断提取的整治类型与 Excel 项目小类是否一致"""
+    if not extracted or not excel:
+        return False
+    e = extracted.replace("整治", "").replace("工业", "").replace("企业", "").replace(" ", "")
+    x = excel.replace("整治", "").replace("工业", "").replace("企业", "").replace(" ", "")
+    # 核心词匹配
+    if "雨污分流" in e and "雨污分流" in x:
+        return True
+    if "废水接纳" in e and "废水接纳" in x:
+        return True
+    return False
+
+
+def _col_letter(col: int) -> str:
+    """列号转字母（1→A, 27→AA）"""
+    result = ""
+    while col > 0:
+        col -= 1
+        result = chr(65 + col % 26) + result
+        col //= 26
+    return result
+
+
 def merge_json_results(results: list[dict], output_path: str) -> str:
     """
     将多个项目提取结果合并为一个 JSON 文件

@@ -41,8 +41,12 @@ def read_project_list(excel_path: str) -> list[dict[str, Any]]:
     data_rows = rows[1:]
 
     # 找到必要的列索引
-    path_col = _find_col_index(headers, ["项目路径", "文件夹路径", "路径", "project_path"])
-    type_col = _find_col_index(headers, ["项目类型", "类型", "project_type"])
+    path_col = _find_col_index(headers, [
+        "完整路径", "项目路径", "文件夹路径", "路径", "project_path"
+    ])
+    type_col = _find_col_index(headers, [
+        "项目小类", "项目类型", "类型", "project_type"
+    ])
 
     if path_col is None:
         raise ValueError(

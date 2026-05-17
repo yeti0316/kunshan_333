@@ -30,7 +30,7 @@ sys.path.insert(0, str(_project_root))
 from agent.runner import process_project, batch_process_parallel
 from core.template_loader import load_templates
 from core.excel_reader import read_project_list, read_directory_as_project_list
-from core.excel_utils import results_to_excel
+from core.excel_utils import results_to_excel, append_results_to_excel
 from core.checkpoint import Checkpoint
 
 
@@ -134,17 +134,17 @@ def main():
         )
         results = []
         for r in raw_results:
-            clean = r.get("result", {})
+            clean = r.get("result", {}) if isinstance(r.get("result"), dict) else {}
             if isinstance(clean, dict):
                 clean["_folder"] = r["folder"]
-                clean["_path"] = r.get("path", "")
+                clean["_path"] = r.get("path", "") or r.get("folder", "")
                 clean["_type"] = r["type"]
                 clean["_status"] = r["status"]
                 if r.get("error"):
                     clean["_error"] = r["error"]
             results.append(clean)
             # 保存 checkpoint
-            checkpoint.set(r.get("path", ""), r)
+            checkpoint.set(r.get("path", "") or r.get("folder", ""), r)
 
     else:
         # === 串行模式 ===
@@ -217,10 +217,19 @@ def main():
     print(f"\n📄 JSON: {json_path}")
 
     try:
-        excel_path = results_to_excel(str(json_path), str(output_path))
-        print(f"📊 Excel: {excel_path}")
+        # 如果用的是 --input Excel，在原表后面追加提取结果列
+        if args.input:
+            excel_path = append_results_to_excel(
+                args.input, results, str(output_path)
+            )
+            print(f"📊 Excel（原表+提取结果）: {excel_path}")
+        else:
+            excel_path = results_to_excel(str(json_path), str(output_path))
+            print(f"📊 Excel: {excel_path}")
     except Exception as e:
         print(f"⚠  Excel 导出失败: {e}")
+        import traceback
+        traceback.print_exc()
 
     print("\n✅ 完成！")
 

@@ -14,12 +14,20 @@ from core.ocr_cache import get_cache
 
 @tool
 def list_project_files(project_path: str) -> str:
-    """列出项目文件夹下的所有文件，返回文件清单（含大小信息）"""
+    """列出项目下的文件（目录则列出所有子文件，单文件则返回该文件）"""
     path = Path(project_path)
     if not path.exists():
         return f"[错误] 路径不存在: {project_path}"
+
+    # 如果是文件，直接返回
+    if path.is_file():
+        size = path.stat().st_size
+        size_str = f"{size//1024}KB" if size > 1024 else f"{size}B"
+        return f"{path.name}  ({size_str})"
+
+    # 如果是目录
     if not path.is_dir():
-        return f"[错误] 不是目录: {project_path}"
+        return f"[错误] 不是文件也不是目录: {project_path}"
 
     files = []
     for entry in sorted(path.rglob("*")):
