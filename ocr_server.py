@@ -31,7 +31,9 @@ from core.ocr_cache import get_cache
 
 # ----- FastAPI 应用 -----
 try:
-    from fastapi import FastAPI, HTTPException
+    from fastapi import FastAPI, HTTPException, UploadFile, File, Form
+    from fastapi.responses import HTMLResponse
+    from fastapi.staticfiles import StaticFiles
     from pydantic import BaseModel
     import uvicorn
 except ImportError:
@@ -134,6 +136,268 @@ async def cache_clear(file_path: str | None = None):
     return {"cleared": count}
 
 
+# ============ 文件上传接口 ============
+
+@app.post("/ocr/upload")
+async def ocr_upload(file: UploadFile = File(...), max_pages: int = Form(2)):
+    """
+    上传文件进行 OCR（支持 PDF / 图片 / Word）
+    文件保存到临时目录后调用 extract_text
+    """
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="未提供文件")
+
+    # 写入临时文件
+    import shutil
+    import tempfile
+
+    suffix = Path(file.filename or "unknown").suffix or ".tmp"
+    with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
+        shutil.copyfileobj(file.file, tmp)
+        tmp_path = tmp.name
+
+    try:
+        from core.extractor import extract_text
+
+        # 先查缓存
+        cache = get_cache()
+        cached_text = cache.get(tmp_path)
+        if cached_text is not None:
+            method = "cached"
+            text = cached_text
+            cached = True
+        else:
+            text = extract_text(tmp_path, max_pages=max_pages)
+            if "[空]" in text and "--- 第" in text or text.startswith("[OCR"):
+                method = "ocr"
+            else:
+                method = "direct"
+            cache.set(tmp_path, text, method=method)
+            cached = False
+
+        return {
+            "success": True,
+            "file_name": file.filename,
+            "text": text,
+            "method": method,
+            "pages": max_pages,
+            "cached": cached,
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        try:
+            os.unlink(tmp_path)
+        except Exception:
+            pass
+
+
+# ============ Web 页面 ============
+
+@app.get("/ui", response_class=HTMLResponse)
+async def web_ui():
+    """简单的 Web 上传页面"""
+    return HTMLResponse(content=UI_HTML)
+
+
+UI_HTML = """<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OCR 文字提取</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: "Microsoft YaHei", "微软雅黑", sans-serif;
+            background: #f0f2f5;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 40px 20px;
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .header h1 { font-size: 24px; color: #1a1a2e; }
+        .header p { color: #666; margin-top: 8px; font-size: 14px; }
+        .upload-zone {
+            width: 100%;
+            max-width: 560px;
+            background: #fff;
+            border: 2px dashed #c0c4cc;
+            border-radius: 12px;
+            padding: 48px 24px;
+            text-align: center;
+            cursor: pointer;
+            transition: all .2s;
+        }
+        .upload-zone:hover, .upload-zone.dragover {
+            border-color: #409eff;
+            background: #ecf5ff;
+        }
+        .upload-zone .icon { font-size: 48px; margin-bottom: 12px; }
+        .upload-zone .hint { color: #909399; font-size: 14px; }
+        .upload-zone input[type=file] { display: none; }
+        .settings {
+            margin-top: 16px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            justify-content: center;
+            color: #666;
+            font-size: 14px;
+        }
+        .settings input {
+            width: 60px;
+            padding: 4px 8px;
+            border: 1px solid #dcdfe6;
+            border-radius: 4px;
+            text-align: center;
+        }
+        .status {
+            margin-top: 16px;
+            color: #409eff;
+            font-size: 14px;
+            min-height: 20px;
+        }
+        .result {
+            width: 100%;
+            max-width: 700px;
+            margin-top: 24px;
+            background: #fff;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+            overflow: hidden;
+            display: none;
+        }
+        .result.show { display: block; }
+        .result .meta {
+            padding: 12px 16px;
+            background: #fafafa;
+            border-bottom: 1px solid #ebeef5;
+            font-size: 13px;
+            color: #666;
+            display: flex;
+            gap: 16px;
+            flex-wrap: wrap;
+        }
+        .result .meta span { white-space: nowrap; }
+        .result .meta .method { color: #67c23a; font-weight: bold; }
+        .result .meta .cached { color: #e6a23c; }
+        .result pre {
+            padding: 20px 24px;
+            font-size: 15px;
+            line-height: 1.7;
+            white-space: pre-wrap;
+            word-break: break-all;
+            max-height: 500px;
+            overflow-y: auto;
+            font-family: "Microsoft YaHei", monospace;
+        }
+        .error {
+            color: #f56c6c;
+            background: #fef0f0;
+            border: 1px solid #fde2e2;
+            padding: 16px;
+            border-radius: 8px;
+            margin-top: 16px;
+            display: none;
+            max-width: 700px;
+            width: 100%;
+        }
+        .error.show { display: block; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>📄 OCR 文字提取</h1>
+        <p>上传 PDF / 图片 / Word，自动识别文字 — 文字型 PDF 直接提取，扫描件走 OCR</p>
+    </div>
+
+    <div class="upload-zone" id="uploadZone">
+        <div class="icon">📤</div>
+        <div class="hint">点击选择文件，或拖拽文件到此处</div>
+        <input type="file" id="fileInput" accept=".pdf,.png,.jpg,.jpeg,.bmp,.tiff,.tif,.docx">
+    </div>
+
+    <div class="settings">
+        <label>最大页数：</label>
+        <input type="number" id="maxPages" value="2" min="1" max="20">
+    </div>
+
+    <div class="status" id="status"></div>
+
+    <div class="error" id="error"></div>
+
+    <div class="result" id="result">
+        <div class="meta" id="meta"></div>
+        <pre id="textContent"></pre>
+    </div>
+
+    <script>
+        const zone = document.getElementById('uploadZone');
+        const input = document.getElementById('fileInput');
+        const status = document.getElementById('status');
+        const result = document.getElementById('result');
+        const meta = document.getElementById('meta');
+        const textContent = document.getElementById('textContent');
+        const errorDiv = document.getElementById('error');
+        const maxPages = document.getElementById('maxPages');
+
+        zone.addEventListener('click', () => input.click());
+        zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('dragover'); });
+        zone.addEventListener('dragleave', () => zone.classList.remove('dragover'));
+        zone.addEventListener('drop', e => {
+            e.preventDefault();
+            zone.classList.remove('dragover');
+            if (e.dataTransfer.files.length) {
+                input.files = e.dataTransfer.files;
+                handleFile(e.dataTransfer.files[0]);
+            }
+        });
+        input.addEventListener('change', () => {
+            if (input.files.length) handleFile(input.files[0]);
+        });
+
+        async function handleFile(file) {
+            result.classList.remove('show');
+            errorDiv.classList.remove('show');
+            status.textContent = '⏳ 正在提取文字...';
+
+            const form = new FormData();
+            form.append('file', file);
+            form.append('max_pages', maxPages.value || 2);
+
+            try {
+                const resp = await fetch('/ocr/upload', { method: 'POST', body: form });
+                const data = await resp.json();
+
+                if (!resp.ok) {
+                    throw new Error(data.detail || '未知错误');
+                }
+
+                status.textContent = '✅ 提取完成';
+                meta.innerHTML =
+                    '<span>📁 ' + data.file_name + '</span>' +
+                    '<span class="method">🔬 ' + data.method + '</span>' +
+                    '<span>📄 ' + data.pages + ' 页</span>' +
+                    (data.cached ? '<span class="cached">💾 缓存命中</span>' : '');
+                textContent.textContent = data.text || '（未识别到文字）';
+                result.classList.add('show');
+            } catch (err) {
+                status.textContent = '';
+                errorDiv.textContent = '❌ ' + err.message;
+                errorDiv.classList.add('show');
+            }
+        }
+    </script>
+</body>
+</html>"""
+
+
 def main():
     parser = argparse.ArgumentParser(description="OCR HTTP 常驻服务")
     parser.add_argument("--port", "-p", type=int, default=5000, help="监听端口（默认 5000）")
@@ -141,9 +405,11 @@ def main():
     args = parser.parse_args()
 
     print(f"🔌 OCR 服务启动: http://{args.host}:{args.port}")
-    print(f"   POST /ocr    — 文字提取")
-    print(f"   GET  /health — 健康检查")
-    print(f"   GET  /cache/stats  — 缓存统计")
+    print(f"   🌐 Web 页面: http://{args.host}:{args.port}/ui")
+    print(f"   POST /ocr         — 文字提取（传文件路径）")
+    print(f"   POST /ocr/upload  — 文字提取（上传文件）")
+    print(f"   GET  /health      — 健康检查")
+    print(f"   GET  /cache/stats — 缓存统计")
     print("按 Ctrl+C 停止")
 
     uvicorn.run(app, host=args.host, port=args.port)
