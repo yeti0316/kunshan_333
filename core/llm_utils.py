@@ -4,10 +4,13 @@ LLM 工具模块 — 统一调用大语言模型
 """
 
 import os
+from pathlib import Path
 from typing import Optional
 from dotenv import load_dotenv
 
-load_dotenv()
+# 从项目根目录加载 .env（无论从哪个目录启动）
+_env_path = Path(__file__).resolve().parent.parent / ".env"
+load_dotenv(_env_path)
 
 
 # ---------- 配置读取 ----------
