@@ -158,8 +158,19 @@ def append_results_to_excel(
     if path_col is None:
         raise ValueError(f"原始 Excel 中找不到路径列。表头: {headers}")
 
-    # 找最后一列
+    # 找原始数据真正的最后一列（表头有值的最后一列）
     max_col = ws.max_column
+    # 从最后一列往前扫，找表头有值的列
+    while max_col > 0:
+        header_val = ws.cell(row=1, column=max_col).value
+        if header_val:
+            break
+        max_col -= 1
+
+    # 如果 max_col 过大（原始表拖了 16384 列），回退到已知列之后
+    orig_header_count = len([h for h in headers if h])
+    if max_col > orig_header_count + 50:
+        max_col = orig_header_count
 
     # 收集原始 Excel 中所有存在的类型（项目小类列）
     type_col = None
@@ -277,6 +288,14 @@ def _type_match(extracted: str, excel: str) -> bool:
         return True
     if "废水接纳" in e and "废水接纳" in x:
         return True
+    return False
+
+
+def _col_has_data(ws, col: int, rows_to_check: int = 10) -> bool:
+    """检查某列前N行是否有数据"""
+    for row in range(1, min(rows_to_check + 1, ws.max_row + 1)):
+        if ws.cell(row=row, column=col).value is not None:
+            return True
     return False
 
 
