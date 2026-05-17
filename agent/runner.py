@@ -154,16 +154,10 @@ def process_project(
         extracted_fields = raw_result.get("提取结果", raw_result)
 
         # ==== 事后验证（暂时关闭） ====
-        # cache = get_cache()
-        # doc_texts = {}
-        # for fpath in processed:
-        #     text = cache.get(fpath)
-        #     if text:
-        #         doc_texts[fpath] = text
-        # if not doc_texts:
-        #     doc_texts = _extract_tool_results(messages)
-        # verified_result = verify_extraction(extracted_fields, doc_texts)
         verified_result = {"提取结果": extracted_fields, "已读文件": processed}
+
+        # ==== 推理追踪：记录 Agent 的思考过程 ====
+        reasoning_trace = _build_reasoning_trace(messages)
 
         return {
             "folder": folder_name,
@@ -173,6 +167,7 @@ def process_project(
             "result": verified_result,
             "tool_calls": tool_calls,
             "files_processed": processed,
+            "reasoning_trace": reasoning_trace,
         }
 
     except Exception as e:
@@ -276,6 +271,53 @@ def batch_process_parallel(
         print(f"  ✓ {completed} 成功  ✗ {errors} 失败")
 
     return results
+
+
+def _build_reasoning_trace(messages: list) -> list[dict]:
+    """构建推理追踪：提取 Agent 的思考→行动→观察过程"""
+    trace = []
+    for m in messages:
+        # 跳过 system 消息
+        if hasattr(m, 'type') and m.type == 'system':
+            continue
+
+        if hasattr(m, 'tool_calls') and m.tool_calls:
+            # AI 决定调用工具
+            for tc in m.tool_calls:
+                name = tc.get('name', '?')
+                args = tc.get('args', {})
+                # 简化参数显示
+                args_short = {}
+                for k, v in args.items():
+                    val_str = str(v)
+                    if len(val_str) > 60:
+                        val_str = val_str[:57] + '...'
+                    args_short[k] = val_str
+                trace.append({
+                    "步骤": len(trace) + 1,
+                    "类型": "🔧 调用工具",
+                    "工具": name,
+                    "参数": args_short,
+                })
+        elif hasattr(m, 'content') and m.content:
+            content = str(m.content)
+            # 工具返回
+            if hasattr(m, 'name') and m.name:
+                trace.append({
+                    "步骤": len(trace) + 1,
+                    "类型": "📋 工具返回",
+                    "工具": m.name,
+                    "内容摘要": content[:120] + ('...' if len(content) > 120 else ''),
+                })
+            else:
+                # AI 的思考 / 最终回答
+                trace.append({
+                    "步骤": len(trace) + 1,
+                    "类型": "💭 Agent思考",
+                    "内容": content[:300] + ('...' if len(content) > 300 else ''),
+                })
+
+    return trace
 
 
 def _extract_processed_files(messages: list) -> list[str]:

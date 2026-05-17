@@ -140,6 +140,7 @@ def main():
                 clean["_path"] = r.get("path", "") or r.get("folder", "")
                 clean["_type"] = r["type"]
                 clean["_status"] = r["status"]
+                clean["_reasoning_trace"] = r.get("reasoning_trace", [])
                 if r.get("error"):
                     clean["_error"] = r["error"]
             results.append(clean)
@@ -187,6 +188,7 @@ def main():
                 clean["_path"] = proj_path
                 clean["_type"] = proj_type
                 clean["_status"] = result["status"]
+                clean["_reasoning_trace"] = result.get("reasoning_trace", [])
                 if result.get("error"):
                     clean["_error"] = result["error"]
             results.append(clean)
